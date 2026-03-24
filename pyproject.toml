@@ -16,6 +16,17 @@ dependencies = [
 [project.optional-dependencies]
 api = ["fastapi>=0.100.0", "uvicorn>=0.22.0"]
 dev = ["pytest>=7.0.0", "pytest-cov>=4.0.0"]
+ocr_google = ["google-cloud-vision>=3.4.0"]
+ocr_azure = ["azure-ai-vision-imageanalysis>=1.0.0b1", "azure-core>=1.29.5"]
+ocr_paddle = ["paddleocr>=2.7.0", "paddlepaddle>=2.5.0"]
+ocr_trocr = ["torch>=2.0.0", "transformers>=4.34.0", "Pillow>=9.5.0"]
+all = [
+    "fastapi>=0.100.0", "uvicorn>=0.22.0",
+    "google-cloud-vision>=3.4.0",
+    "azure-ai-vision-imageanalysis>=1.0.0b1", "azure-core>=1.29.5",
+    "paddleocr>=2.7.0", "paddlepaddle>=2.5.0",
+    "torch>=2.0.0", "transformers>=4.34.0", "Pillow>=9.5.0"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,12 +1,21 @@
-# AutoGrader — Phase 1: Image preprocessing
+# AutoGrader Core Dependencies
 # Python 3.10+
-
 opencv-python>=4.8.0
 numpy>=1.24.0
 
 # Optional: API (Phase 4)
 # fastapi>=0.100.0
 # uvicorn>=0.22.0
+
+# Optional: OCR / HTR Layer (Phase 2)
+# google-cloud-vision>=3.4.0
+# azure-ai-vision-imageanalysis>=1.0.0b1
+# azure-core>=1.29.5
+# paddleocr>=2.7.0
+# paddlepaddle>=2.5.0
+# torch>=2.0.0
+# transformers>=4.34.0
+# Pillow>=9.5.0
 
 # Dev: tests
 pytest>=7.0.0

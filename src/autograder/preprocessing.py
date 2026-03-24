@@ -66,8 +66,10 @@ def ingest(
         img = np.asarray(image_input)
         if img.ndim == 2:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        elif img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         elif img.ndim != 3:
-            raise ValueError("Image must be 2D (grayscale) or 3D (BGR)")
+            raise ValueError("Image must be 2D (grayscale) or 3D (BGR/BGRA)")
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     if block_size % 2 == 0:
