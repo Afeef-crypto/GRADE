@@ -1,4 +1,4 @@
-# GRADE (GRADE)
+# GRADE (Generalized Recognition and Automated Document Evaluator)
 
 **Automatic Handwritten Answer Sheet Evaluator** — uses Computer Vision and Natural Language Processing to scan, recognise, and grade handwritten exam answer sheets with minimal human intervention.
 
