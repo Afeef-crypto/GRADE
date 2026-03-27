@@ -1,18 +1,18 @@
-# AutoGrader — System Architecture
+# GRADE — System Architecture
 
 **Version:** 1.0  
-**Project:** AutoGrader — Automatic Handwritten Answer Sheet Evaluator  
+**Project:** GRADE — Automatic Handwritten Answer Sheet Evaluator  
 **Stack:** OpenCV · Google Vision / Azure AI Vision · PaddleOCR · TrOCR · Sentence-BERT · FastAPI · React · PostgreSQL
 
 ---
 
 ## 1. High-Level Architecture Overview
 
-AutoGrader is a four-module pipeline that ingests scanned handwritten answer sheets, segments answer regions, performs Handwritten Text Recognition (HTR), scores answers via semantic similarity, and delivers structured feedback via a web dashboard.
+GRADE is a four-module pipeline that ingests scanned handwritten answer sheets, segments answer regions, performs Handwritten Text Recognition (HTR), scores answers via semantic similarity, and delivers structured feedback via a web dashboard.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                                    AutoGrader System                                     │
+│                                    GRADE System                                     │
 ├─────────────────────────────────────────────────────────────────────────────────────────┤
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐    ┌──────────────────┐  │
 │  │   Frontend  │───▶│  FastAPI    │───▶│  Image Preprocess   │───▶│  OCR/HTR Layer   │  │

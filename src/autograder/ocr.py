@@ -1,5 +1,5 @@
 """
-OCR / HTR Layer for AutoGrader — Phase 2.
+OCR / HTR Layer for GRADE — Phase 2.
 
 Three-tier orchestration: Primary (Cloud API) → Fallback 1 (PaddleOCR) → Fallback 2 (TrOCR).
 Each tier returns (text, confidence, engine_name). Confidence is normalised to [0, 1].
@@ -52,6 +52,7 @@ class OCRResult:
     confidence: float  # Normalised [0, 1]
     engine: str        # "google" | "azure" | "paddle" | "trocr"
     low_confidence: bool = False  # True if confidence < CONFIDENCE_FLAG_THRESHOLD
+    flags: List[str] | None = None  # e.g. ["ocr_uncertainty", "review_required"]
 
 
 # ---------------------------------------------------------------------------
@@ -80,12 +81,34 @@ def _sanitise_text(text: str) -> str:
     return text
 
 
+def _normalize_confidence(confidence: float) -> float:
+    """Clamp confidence into [0, 1] and coerce invalid inputs."""
+    try:
+        conf = float(confidence)
+    except (TypeError, ValueError):
+        return 0.0
+    if np.isnan(conf) or np.isinf(conf):
+        return 0.0
+    return max(0.0, min(1.0, conf))
+
+
 def _make_result(text: str, confidence: float, engine: str) -> OCRResult:
+    confidence = _normalize_confidence(confidence)
     text = _sanitise_text(text)
     low = confidence < CONFIDENCE_FLAG_THRESHOLD
+    flags: List[str] = []
+    if not text:
+        flags.append("empty_text")
     if low:
+        flags.extend(["ocr_uncertainty", "review_required"])
         logger.info("Engine '%s' returned low confidence %.3f.", engine, confidence)
-    return OCRResult(text=text, confidence=confidence, engine=engine, low_confidence=low)
+    return OCRResult(
+        text=text,
+        confidence=confidence,
+        engine=engine,
+        low_confidence=low,
+        flags=flags,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -447,4 +470,70 @@ def ocr_patch(
 
     # All tiers exhausted — return empty result flagged as low-confidence.
     logger.error("All OCR tiers failed. Last error: %s", last_error)
-    return OCRResult(text="", confidence=0.0, engine="none", low_confidence=True)
+    return OCRResult(
+        text="",
+        confidence=0.0,
+        engine="none",
+        low_confidence=True,
+        flags=["ocr_uncertainty", "review_required", "all_tiers_failed"],
+    )
+
+
+def ocr_patch_consensus(
+    image: np.ndarray,
+    *,
+    trocr_model_name: str = "microsoft/trocr-base-handwritten",
+    trocr_beam_width: int = TROCR_BEAM_WIDTH,
+    retry_delay: float = 1.0,
+) -> OCRResult:
+    """
+    Optional multi-pass OCR consensus mode (v2.1-ready):
+    - Try cloud OCR and PaddleOCR.
+    - If both succeed with non-empty text, choose higher-confidence output.
+    - If only one succeeds, use it.
+    - Else fall back to TrOCR via orchestrator.
+
+    This preserves Phase 2 architecture while preparing for consensus upgrades.
+    """
+    cloud_result: OCRResult | None = None
+    paddle_result: OCRResult | None = None
+
+    try:
+        cloud_result = _ocr_cloud(image)
+    except Exception as exc:
+        logger.warning("Consensus cloud pass failed: %s", exc)
+
+    try:
+        paddle_result = _ocr_paddle(image)
+    except Exception as exc:
+        logger.warning("Consensus paddle pass failed: %s", exc)
+
+    valid = [
+        r
+        for r in (cloud_result, paddle_result)
+        if r is not None and r.text and len(r.text.strip()) >= MIN_TEXT_LENGTH
+    ]
+    if len(valid) == 2:
+        best = max(valid, key=lambda r: r.confidence)
+        if best.flags is None:
+            best.flags = []
+        best.flags.append("consensus_mode")
+        return best
+    if len(valid) == 1:
+        best = valid[0]
+        if best.flags is None:
+            best.flags = []
+        best.flags.append("consensus_mode")
+        return best
+
+    # Delegate to normal orchestrator to include TrOCR fallback path.
+    fallback = ocr_patch(
+        image,
+        trocr_model_name=trocr_model_name,
+        trocr_beam_width=trocr_beam_width,
+        retry_delay=retry_delay,
+    )
+    if fallback.flags is None:
+        fallback.flags = []
+    fallback.flags.append("consensus_mode")
+    return fallback

@@ -1,1 +1,1 @@
-# AutoGrader tests
+# GRADE tests

@@ -1,5 +1,5 @@
 """
-Image preprocessing module for AutoGrader.
+Image preprocessing module for GRADE.
 
 Stages 1–3: Ingest (load, grayscale, threshold, deskew), Segment (contour-based
 answer regions), Preprocess (per-patch bilateral filter, morph close, resize 384×384).
@@ -36,7 +36,9 @@ class PreprocessResult:
 
     patches: List[np.ndarray]  # List of 384×384 grayscale patches
     bboxes: List[Tuple[int, int, int, int]]  # (x, y, w, h) per patch, on original image
+    region_ids: List[str]  # Stable ordered ids: R1, R2, ...
     used_fallback_grid: bool  # True if contour count was wrong and grid fallback was used
+    diagnostics: dict  # Lightweight debug/trace metadata
 
 
 def ingest(
@@ -296,11 +298,16 @@ def preprocess_pipeline(
     patches_raw, bboxes, used_fallback = segment(
         orig_gray, expected_num_regions=expected_num_regions
     )
-    patches_384 = [
-        preprocess_patch(p, size=patch_size) for p in patches_raw
-    ]
+    patches_384 = [preprocess_patch(p, size=patch_size) for p in patches_raw]
+    region_ids = [f"R{i+1}" for i in range(len(patches_384))]
     return PreprocessResult(
         patches=patches_384,
         bboxes=bboxes,
+        region_ids=region_ids,
         used_fallback_grid=used_fallback,
+        diagnostics={
+            "num_regions": len(patches_384),
+            "expected_num_regions": expected_num_regions,
+            "patch_size": patch_size,
+        },
     )

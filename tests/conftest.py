@@ -1,4 +1,4 @@
-"""Pytest fixtures for AutoGrader tests."""
+"""Pytest fixtures for GRADE tests."""
 
 import numpy as np
 import pytest

@@ -1,4 +1,4 @@
-# GRADE (AutoGrader)
+# GRADE (GRADE)
 
 **Automatic Handwritten Answer Sheet Evaluator** — uses Computer Vision and Natural Language Processing to scan, recognise, and grade handwritten exam answer sheets with minimal human intervention.
 
@@ -6,7 +6,7 @@
 
 ## About
 
-AutoGrader processes scanned answer sheet images, segments per-question regions, runs Handwritten Text Recognition (HTR) via a three-tier OCR stack (Cloud → PaddleOCR → TrOCR), and scores answers using **Sentence-BERT** semantic similarity for partial credit and paraphrasing tolerance. Results are shown on an interactive dashboard with score overlays and a downloadable PDF report.
+GRADE processes scanned answer sheet images, segments per-question regions, runs Handwritten Text Recognition (HTR) via a three-tier OCR stack (Cloud → PaddleOCR → TrOCR), and scores answers using **Sentence-BERT** semantic similarity for partial credit and paraphrasing tolerance. Results are shown on an interactive dashboard with score overlays and a downloadable PDF report.
 
 - **Objective:** Reliable automated grading for open-ended handwritten responses (not just MCQ/OMR).
 - **Target metrics:** HTR WER &lt; 12%, grading accuracy &gt; 85%, &lt; 12 s per sheet.
@@ -37,10 +37,12 @@ GRADE/
 │   └── autograder/
 │       ├── __init__.py        # Package exports
 │       ├── preprocessing.py   # Ingest, segment, preprocess_patch, preprocess_pipeline
+│       ├── ocr.py             # OCR tier orchestration + consensus mode
 │       └── api.py             # FastAPI placeholder (Phase 4)
 ├── tests/
 │   ├── conftest.py            # Fixtures (synthetic sheets)
-│   └── test_preprocessing.py  # Phase 1 unit tests
+│   ├── test_preprocessing.py  # Phase 1 unit tests
+│   └── test_ocr.py            # Phase 2 unit tests
 ├── requirements.txt
 ├── pyproject.toml
 └── README.md
@@ -62,7 +64,7 @@ GRADE/
 - Md Afeeduddin  
 - Syed Liyaqat  
 
-*B.E. Computer Science Engineering — Academic Mini Project (AutoGrader v1)*
+*B.E. Computer Science Engineering — Academic Mini Project (GRADE v1)*
 
 ---
 

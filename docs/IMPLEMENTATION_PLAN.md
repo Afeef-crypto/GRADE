@@ -1,7 +1,7 @@
-# AutoGrader — Implementation Plan
+# GRADE — Implementation Plan
 
 **Version:** 1.0  
-**Project:** AutoGrader — Automatic Handwritten Answer Sheet Evaluator  
+**Project:** GRADE — Automatic Handwritten Answer Sheet Evaluator  
 **Purpose:** Phased, citation-backed plan to implement the full system from proposal to deployment.
 
 ---

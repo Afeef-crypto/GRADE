@@ -1,5 +1,5 @@
 """
-Unit tests for AutoGrader OCR / HTR Layer — Phase 2.
+Unit tests for GRADE OCR / HTR Layer — Phase 2.
 
 Strategy
 --------
@@ -86,6 +86,22 @@ class TestMakeResult:
 
         r = _make_result("  hello world  ", 0.8, "google")
         assert r.text == "hello world"
+
+    def test_confidence_is_clamped(self):
+        from autograder.ocr import _make_result
+
+        r_high = _make_result("x", 1.7, "google")
+        r_low = _make_result("x", -0.2, "google")
+        assert r_high.confidence == 1.0
+        assert r_low.confidence == 0.0
+
+    def test_flags_include_ocr_uncertainty_when_low_confidence(self):
+        from autograder.ocr import _make_result
+
+        r = _make_result("text", 0.2, "paddle")
+        assert r.flags is not None
+        assert "ocr_uncertainty" in r.flags
+        assert "review_required" in r.flags
 
 
 # ---------------------------------------------------------------------------
@@ -808,3 +824,36 @@ class TestOcrPatch:
         call_kwargs = mock_trocr.call_args
         assert call_kwargs.kwargs.get("model_name") == "microsoft/trocr-large-handwritten"
         assert call_kwargs.kwargs.get("beam_width") == 6
+
+
+class TestOcrPatchConsensus:
+    def test_uses_higher_confidence_when_cloud_and_paddle_both_succeed(self):
+        from autograder.ocr import ocr_patch_consensus, OCRResult
+
+        img = _make_image()
+        cloud = OCRResult(text="cloud answer", confidence=0.7, engine="google")
+        paddle = OCRResult(text="paddle answer", confidence=0.9, engine="paddle")
+
+        with patch("autograder.ocr._ocr_cloud", return_value=cloud):
+            with patch("autograder.ocr._ocr_paddle", return_value=paddle):
+                result = ocr_patch_consensus(img, retry_delay=0)
+
+        assert result.engine == "paddle"
+        assert result.flags is not None
+        assert "consensus_mode" in result.flags
+
+    def test_falls_back_to_orchestrator_when_both_empty(self):
+        from autograder.ocr import ocr_patch_consensus, OCRResult
+
+        img = _make_image()
+        empty = OCRResult(text="", confidence=0.0, engine="google")
+        fallback = OCRResult(text="trocr", confidence=0.8, engine="trocr")
+
+        with patch("autograder.ocr._ocr_cloud", return_value=empty):
+            with patch("autograder.ocr._ocr_paddle", return_value=empty):
+                with patch("autograder.ocr.ocr_patch", return_value=fallback):
+                    result = ocr_patch_consensus(img, retry_delay=0)
+
+        assert result.engine == "trocr"
+        assert result.flags is not None
+        assert "consensus_mode" in result.flags

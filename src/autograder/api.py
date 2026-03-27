@@ -1,5 +1,5 @@
 """
-FastAPI placeholder for AutoGrader.
+FastAPI placeholder for GRADE.
 
 Full API (upload, evaluate, result, report) will be implemented in Phase 4.
 """
@@ -7,7 +7,7 @@ Full API (upload, evaluate, result, report) will be implemented in Phase 4.
 from fastapi import FastAPI
 
 app = FastAPI(
-    title="AutoGrader",
+    title="GRADE",
     description="Automatic Handwritten Answer Sheet Evaluator — Phase 1 placeholder",
     version="0.1.0",
 )

@@ -1,4 +1,4 @@
-"""Unit tests for AutoGrader image preprocessing (Phase 1)."""
+"""Unit tests for GRADE image preprocessing (Phase 1)."""
 
 import tempfile
 from pathlib import Path
@@ -163,3 +163,12 @@ class TestPreprocessResult:
             assert 0 <= x < w and 0 <= y < h
             assert x + bw <= w and y + bh <= h
             assert bw > 0 and bh > 0
+
+    def test_region_ids_and_diagnostics_present(self, synthetic_binary_sheet):
+        result = preprocess_pipeline(
+            synthetic_binary_sheet, expected_num_regions=3, do_deskew=False
+        )
+        assert len(result.region_ids) == len(result.patches)
+        assert result.region_ids[0] == "R1"
+        assert "num_regions" in result.diagnostics
+        assert result.diagnostics["patch_size"] == 384
