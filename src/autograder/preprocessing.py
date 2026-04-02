@@ -19,8 +19,42 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Defaults for OCR input normalisation (proposal: 384×384)
+# Defaults for OCR input normalisation (opencv proposal: 384×384)
 PATCH_SIZE = 384
+
+
+def load_bgr_from_path(path: Union[str, Path]) -> np.ndarray:
+    """
+    Load a BGR image for preprocessing. Supports raster images via OpenCV and
+    **text or scanned PDF** (first page only) via PyMuPDF — ``cv2.imread`` does not read PDFs.
+    """
+    path = Path(path)
+    if path.suffix.lower() == ".pdf":
+        try:
+            import fitz  # PyMuPDF
+        except ImportError as e:
+            raise RuntimeError(
+                "Answer sheet PDFs require PyMuPDF. Install: pip install pymupdf"
+            ) from e
+        doc = fitz.open(path)
+        try:
+            if doc.page_count < 1:
+                raise ValueError(f"PDF has no pages: {path}")
+            page = doc.load_page(0)
+            mat = fitz.Matrix(2.0, 2.0)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+        finally:
+            doc.close()
+        h, w = pix.height, pix.width
+        arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(h, w, pix.n)
+        if pix.n == 4:
+            return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+        return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+
+    img = cv2.imread(str(path))
+    if img is None:
+        raise FileNotFoundError(f"Cannot load image: {path}")
+    return img
 
 # Segment: min contour area as fraction of image area (filter tiny noise)
 MIN_CONTOUR_AREA_FRAC = 0.002
@@ -61,9 +95,7 @@ def ingest(
         Grayscale, thresholded (and optionally deskewed) image.
     """
     if isinstance(image_input, (str, Path)):
-        img = cv2.imread(str(image_input))
-        if img is None:
-            raise FileNotFoundError(f"Cannot load image: {image_input}")
+        img = load_bgr_from_path(image_input)
     else:
         img = np.asarray(image_input)
         if img.ndim == 2:
@@ -272,7 +304,7 @@ def preprocess_pipeline(
     Run full preprocessing: ingest → segment → preprocess_patch for each region.
 
     Args:
-        image_input: Path to scanned answer sheet (JPEG/PNG) or image array.
+        image_input: Path to scanned answer sheet (JPEG/PNG/**PDF first page**) or image array.
         expected_num_regions: If set, contour count is validated; on mismatch, grid fallback is used.
         patch_size: Output patch side length (default 384).
         do_deskew: Whether to deskew in ingest stage.
@@ -280,13 +312,11 @@ def preprocess_pipeline(
     Returns:
         PreprocessResult with list of size×size patches, bboxes, and fallback flag.
     """
-    thresh = ingest(image_input, do_deskew=do_deskew)
-    # For bbox consistency, segment the original (we need bboxes on original image)
     if isinstance(image_input, (str, Path)):
-        orig = cv2.imread(str(image_input))
-        if orig is None:
-            orig = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+        orig = load_bgr_from_path(image_input)
+        thresh = ingest(orig, do_deskew=do_deskew)
     else:
+        thresh = ingest(image_input, do_deskew=do_deskew)
         orig = (
             cv2.cvtColor(image_input, cv2.COLOR_GRAY2BGR)
             if image_input.ndim == 2

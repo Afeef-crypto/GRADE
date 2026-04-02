@@ -1,1 +1,44 @@
-micillaneousSSS/
+﻿micillaneousSSS/
+
+# Secrets and local env (never commit real keys)
+.env
+.env.*
+!.env.example
+.env.local
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+frontend/.env.local
+
+# Optional: local service account JSONs (uncomment if you store them in-repo)
+# *-service-account*.json
+# google-credentials.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# Local runtime / uploads (SQLite, scanned sheets)
+data/
+
+# Editable install metadata
+*.egg-info/
+
+# Sample keys / scans (keep out of git unless you intend to share)
+/Key.pdf
+/docs/Key.pdf
+DocScanner*.pdf
+
+# Frontend (Vite)
+frontend/node_modules/
+frontend/dist/
+
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
