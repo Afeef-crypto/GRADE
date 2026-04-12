@@ -2,13 +2,15 @@
 
 **Version:** 1.0  
 **Project:** GRADE — Automatic Handwritten Answer Sheet Evaluator  
-**Stack:** OpenCV · Google Vision / Azure AI Vision · PaddleOCR · TrOCR · Sentence-BERT · FastAPI · React · PostgreSQL
+**Stack:** OpenCV · Google Cloud Vision / Azure AI Vision · PaddleOCR · TrOCR · FastAPI · React · PostgreSQL + pgvector
+
+**Implementation note (current repo):** The backend persists data in **PostgreSQL** with **pgvector** (see `supabase/migrations/`); `GRADE_DATABASE_URL` must be set. Scoring uses an **LLM rubric** path when Gemini is enabled, not Sentence-BERT, though the diagram below still illustrates the conceptual “semantic” stage.
 
 ---
 
 ## 1. High-Level Architecture Overview
 
-GRADE is a four-module pipeline that ingests scanned handwritten answer sheets, segments answer regions, performs Handwritten Text Recognition (HTR), scores answers via semantic similarity, and delivers structured feedback via a web dashboard.
+GRADE is a four-module pipeline that ingests scanned handwritten answer sheets, segments answer regions, performs Handwritten Text Recognition (HTR), scores answers (LLM rubric or fallback), and delivers structured feedback via a web dashboard.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐

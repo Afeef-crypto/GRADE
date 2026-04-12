@@ -1,7 +1,28 @@
-"""Pytest fixtures for GRADE tests."""
+"""Pytest fixtures for GRADE."""
+
+import os
+
+# PostgreSQL is required. Tests use a dedicated DB — start Docker first: `docker compose up -d`
+# Override with GRADE_TEST_DATABASE_URL for CI or a custom local instance.
+os.environ["GRADE_DATABASE_URL"] = os.environ.get(
+    "GRADE_TEST_DATABASE_URL",
+    "postgresql://grade:grade@127.0.0.1:5433/grade_test",
+)
 
 import numpy as np
 import pytest
+
+
+@pytest.fixture
+def client():
+    """FastAPI TestClient (uses GRADE_DATABASE_URL from module-level env above)."""
+    pytest.importorskip("fastapi")
+    from starlette.testclient import TestClient
+
+    from autograder.api import app
+
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture

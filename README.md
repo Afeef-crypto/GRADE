@@ -1,52 +1,117 @@
 # GRADE (Generalized Recognition and Automated Document Evaluator)
 
-**Automatic Handwritten Answer Sheet Evaluator** — uses Computer Vision and Natural Language Processing to scan, recognise, and grade handwritten exam answer sheets with minimal human intervention.
+**Automatic Handwritten Answer Sheet Evaluator** — scans, recognises, and grades handwritten exam answers with minimal human intervention.
 
 ---
 
 ## About
 
-GRADE processes scanned answer sheet images, segments per-question regions, runs Handwritten Text Recognition (HTR) via a three-tier OCR stack (Cloud → PaddleOCR → TrOCR), and scores answers using **Sentence-BERT** semantic similarity for partial credit and paraphrasing tolerance. Results are shown on an interactive dashboard with score overlays and a downloadable PDF report.
+GRADE segments scanned sheets (OpenCV), runs **OCR** with a tiered stack (**Google Cloud Vision** `document_text_detection` preferred when configured, then Azure, PaddleOCR, TrOCR), and **scores** answers with an **LLM rubric** when enabled or a **legacy fallback** otherwise. Results are exposed via **FastAPI** and a PDF report.
 
-- **Objective:** Reliable automated grading for open-ended handwritten responses (not just MCQ/OMR).
-- **Target metrics:** HTR WER &lt; 12%, grading accuracy &gt; 85%, &lt; 12 s per sheet.
+- **Objective:** Reliable grading for open-ended handwritten responses.
+- **Implementation plan:** See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
 
 ---
 
-## Tech Stack
+## Tech stack (as implemented)
 
 | Layer | Technology |
 |-------|------------|
-| **Preprocessing** | OpenCV 4.x (thresholding, deskew, contour segmentation) |
-| **OCR / HTR** | Google Cloud Vision / Azure AI Vision (primary), PaddleOCR (fallback 1), TrOCR (fallback 2) |
-| **Scoring** | Sentence-BERT (`sentence-transformers`, all-mpnet-base-v2) |
-| **Backend** | FastAPI, PostgreSQL |
-| **Frontend** | React (dashboard, uploads, annotated results, PDF download) |
-| **Report** | ReportLab (or equivalent) for PDF generation |
+| **Preprocessing** | OpenCV (segmentation, patches) |
+| **OCR / HTR** | **Google Cloud Vision** (tier 1 when `GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_CLOUD_VISION_API_KEY` is set), Azure, PaddleOCR, TrOCR |
+| **Embeddings / retrieval** | Local hash embeddings (`embed_text_local`, 128-D); optional **pgvector** on Postgres |
+| **Scoring** | Gemini when `GRADE_ENABLE_LLM` + key; else legacy fallback |
+| **Backend** | FastAPI |
+| **Storage** | **PostgreSQL + pgvector** (`GRADE_DATABASE_URL` required) |
+| **Report** | ReportLab PDF |
+
+Install extras as needed: `pip install -e ".[api]"` (includes Postgres drivers), `pip install -e ".[ocr_google]"`, `pip install -e ".[llm_gemini]"`.
 
 ---
 
-## Repository Structure
+## Repository structure (high level)
 
 ```
 GRADE/
-├── docs/
-│   ├── ARCHITECTURE.md        # System design, components, data flow
-│   └── IMPLEMENTATION_PLAN.md # Phased plan with roadblocks & citations
-├── src/
-│   └── autograder/
-│       ├── __init__.py        # Package exports
-│       ├── preprocessing.py   # Ingest, segment, preprocess_patch, preprocess_pipeline
-│       ├── ocr.py             # OCR tier orchestration + consensus mode
-│       └── api.py             # FastAPI placeholder (Phase 4)
+├── docs/                    # ARCHITECTURE.md, IMPLEMENTATION_PLAN.md
+├── supabase/migrations/     # Postgres + pgvector schema (Supabase-compatible)
+├── scripts/
+│   ├── verify_phases.py     # Import smoke test
+│   ├── verify_postgres_db.py   # DB + pgvector integration (needs GRADE_DATABASE_URL)
+│   └── verify_key_pdfs.py   # Answer-key PDF parsing (docs/Key.pdf, DocScanner*.pdf)
+├── src/autograder/          # preprocessing, ocr, db, api, scoring, …
 ├── tests/
-│   ├── conftest.py            # Fixtures (synthetic sheets)
-│   ├── test_preprocessing.py  # Phase 1 unit tests
-│   └── test_ocr.py            # Phase 2 unit tests
-├── requirements.txt
 ├── pyproject.toml
 └── README.md
 ```
+
+---
+
+## Configuration (`.env`)
+
+Copy [`.env.example`](.env.example) to `.env` in the repo root.
+
+| Variable | Purpose |
+|----------|---------|
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account JSON (**recommended for Vision OCR**) |
+| `GOOGLE_CLOUD_VISION_API_KEY` | Alternative to JSON for Vision API |
+| `GRADE_OCR_GOOGLE_ONLY` | Optional: cloud tier uses only Google (no Azure fallback) |
+| `GRADE_OCR_CLOUD_ONLY` | Optional: no local PaddleOCR/TrOCR fallback |
+| `GRADE_DATABASE_URL` | **Required** for the API: Postgres URI (see `docker-compose.yml` for local dev) |
+| `GRADE_ENABLE_LLM` / `GRADE_GEMINI_API_KEY` | Optional LLM grading |
+
+Passwords with **`$`** in URLs: loaders use `interpolate=False` so `.env` values are not mangled.
+
+---
+
+## Getting started
+
+1. **Clone** and **install:**
+   ```bash
+   pip install -e ".[api,ocr_google]"
+   ```
+2. **Database:** use **Docker** (below) or any PostgreSQL 16+ with pgvector. Set `GRADE_DATABASE_URL` in `.env`. The API runs `init_db()` on startup and creates the schema (no manual SQL required for a fresh local DB). For **Supabase**, apply `supabase/migrations/` via the SQL editor or CLI instead.
+3. **Configure** `.env` (Vision credentials for OCR; `GRADE_DATABASE_URL`; optional Gemini).
+4. **Run API** (from repo root):
+   ```powershell
+   $env:PYTHONPATH = "src"
+   python -m uvicorn autograder.api:app --host 127.0.0.1 --port 8000
+   ```
+5. **Tests:** `python -m pytest` needs Postgres (default matches Docker below; override with `GRADE_TEST_DATABASE_URL`).
+
+### Docker (local PostgreSQL + pgvector)
+
+1. Install **[Docker Desktop for Windows](https://docs.docker.com/desktop/setup/install/windows-install/)** and enable the **WSL 2** backend if the installer asks. Reboot if required.
+2. **Start Docker Desktop** and wait until the whale icon shows **Running** (if `docker version` errors with `dockerDesktopLinuxEngine` / “pipe … not found”, the engine is not started).
+3. From the repo root:
+   ```powershell
+   docker compose up -d
+   docker compose ps
+   ```
+   You should see `postgres` **healthy** on host port **5433** (avoids clashing with a local Postgres on 5432).
+4. Point the app at the container (for local-only dev, in `.env`):
+   ```text
+   GRADE_DATABASE_URL=postgresql://grade:grade@127.0.0.1:5433/grade_test
+   ```
+   To keep **Supabase** for the API but run **tests** against Docker, leave `GRADE_DATABASE_URL` as-is and set `GRADE_TEST_DATABASE_URL` to the URL above (see `tests/conftest.py`).
+5. Smoke test:
+   ```powershell
+   $env:PYTHONPATH = "src"
+   $env:GRADE_DATABASE_URL = "postgresql://grade:grade@127.0.0.1:5433/grade_test"
+   python scripts/verify_postgres_db.py
+   ```
+
+### Verification scripts
+
+```powershell
+$env:PYTHONPATH = "src"
+python scripts/verify_phases.py
+python scripts/verify_key_pdfs.py          # parses docs/Key.pdf + DocScanner*.pdf if present
+python scripts/verify_postgres_db.py     # needs GRADE_DATABASE_URL (pip install -e ".[api]" includes drivers)
+```
+
+- **`docs/Key.pdf`**: text-based key → expect multiple `Q1…` sections after parsing.
+- **`DocScanner … am.pdf`**: typical **phone scan** has no text layer → script reports “no extractable text” until you use a text PDF or OCR the scan elsewhere.
 
 ---
 
@@ -54,35 +119,17 @@ GRADE/
 
 | Document | Description |
 |----------|-------------|
-| **[System Architecture](docs/ARCHITECTURE.md)** | Component definitions, 8-stage pipeline, interfaces, DB schema, references. |
-| **[Implementation Plan](docs/IMPLEMENTATION_PLAN.md)** | 6-phase implementation with tasks, acceptance criteria, **roadblocks & mitigations**, and citations. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design (note: diagram may describe earlier SBERT/Postgres-only assumptions). |
+| [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | Phased plan and v2 direction. |
 
 ---
 
 ## Team
- 
+
 - Md Afeeduddin  
 - Syed Liyaqat  
 
 *B.E. Computer Science Engineering — Academic Mini Project (GRADE v1)*
-
----
-
-## Getting Started
-
-1. **Clone:** `git clone https://github.com/Afeef-crypto/GRADE.git`
-2. **Install:** `pip install -r requirements.txt` (or `pip install -e ".[dev]"` from repo root for editable install + tests).
-3. **Run preprocessing (Phase 1):**
-   ```bash
-   # From repo root, with PYTHONPATH=src
-   python -c "
-   from autograder import preprocess_pipeline
-   result = preprocess_pipeline('path/to/answer_sheet.png', expected_num_regions=5)
-   print(len(result.patches), 'patches', result.patches[0].shape)
-   "
-   ```
-4. **Run tests:** `pytest` (with `src` on PYTHONPATH, or after `pip install -e .`).
-5. Review [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for full pipeline and phases.
 
 ---
 

@@ -27,11 +27,17 @@ from autograder.db import (
     insert_evaluation_result,
     insert_sheet,
     list_answer_keys,
+    next_answer_key_sort_order_start,
 )
 from autograder.embeddings import embed_text_local, retrieve_top_k
 from autograder.key_pdf import pdf_bytes_to_upload_request
-from autograder.ocr import ocr_patch, ocr_patch_consensus
-from autograder.preprocessing import preprocess_pipeline
+from autograder.ocr import (
+    google_vision_configured,
+    google_vision_credentials_file_ok,
+    ocr_patch,
+    ocr_patch_consensus,
+)
+from autograder.preprocessing import PATCH_SIZE, preprocess_pipeline
 from autograder.report_pdf import build_evaluation_pdf
 from autograder.scoring import prompt_hash, score_answer_llm
 from autograder.schemas import (
@@ -47,6 +53,51 @@ from autograder.schemas import (
 logger = logging.getLogger(__name__)
 
 
+def _preprocess_options_from_env() -> dict:
+    """Patch size, PDF zoom, segmentation padding, optional full-page OCR."""
+    patch_size = PATCH_SIZE
+    raw_ps = os.environ.get("GRADE_OCR_PATCH_SIZE", "").strip()
+    if raw_ps:
+        try:
+            patch_size = max(128, min(2048, int(raw_ps)))
+        except ValueError:
+            pass
+    pdf_render_scale = 3.0
+    raw_z = os.environ.get("GRADE_PDF_RENDER_SCALE", "").strip()
+    if raw_z:
+        try:
+            pdf_render_scale = max(1.0, min(6.0, float(raw_z)))
+        except ValueError:
+            pass
+    full_page = os.environ.get("GRADE_OCR_FULL_PAGE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    bbox_padding_frac = 0.04
+    raw_pf = os.environ.get("GRADE_OCR_BBOX_PADDING_FRAC", "").strip()
+    if raw_pf:
+        try:
+            bbox_padding_frac = max(0.0, min(0.2, float(raw_pf)))
+        except ValueError:
+            pass
+    bbox_padding_px_min = 16
+    raw_pm = os.environ.get("GRADE_OCR_BBOX_PADDING_PX_MIN", "").strip()
+    if raw_pm:
+        try:
+            bbox_padding_px_min = max(0, min(120, int(raw_pm)))
+        except ValueError:
+            pass
+    return {
+        "patch_size": patch_size,
+        "pdf_render_scale": pdf_render_scale,
+        "full_page": full_page,
+        "bbox_padding_frac": bbox_padding_frac,
+        "bbox_padding_px_min": bbox_padding_px_min,
+    }
+
+
 def _load_dotenv() -> None:
     """Load `.env`: repo root (always), then current working directory (optional overrides)."""
     try:
@@ -55,8 +106,12 @@ def _load_dotenv() -> None:
         return
     # src/autograder/api.py -> parents[2] is repository root (where pyproject.toml lives).
     repo_root = Path(__file__).resolve().parents[2]
-    load_dotenv(repo_root / ".env")
-    load_dotenv()
+    try:
+        load_dotenv(repo_root / ".env", interpolate=False, override=True)
+        load_dotenv(interpolate=False)
+    except TypeError:
+        load_dotenv(repo_root / ".env", override=True)
+        load_dotenv()
 
 
 _load_dotenv()
@@ -103,6 +158,9 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
+    use_pg = bool(
+        (os.environ.get("GRADE_DATABASE_URL") or os.environ.get("DATABASE_URL") or "").strip()
+    )
     return {
         "status": "ok",
         "phase": "5",
@@ -110,7 +168,7 @@ def health():
         "integrations": {
             "preprocessing": True,
             "ocr": True,
-            "storage_sqlite": True,
+            "storage_backend": "postgres" if use_pg else "unconfigured",
             "scoring_llm_fallback": True,
             "pdf_report": True,
         },
@@ -140,16 +198,63 @@ def integrations_status():
         os.environ.get("GRADE_GEMINI_API_KEY", "").strip()
         or os.environ.get("GEMINI_API_KEY", "").strip()
     )
+    db_url_set = bool(
+        (os.environ.get("GRADE_DATABASE_URL") or os.environ.get("DATABASE_URL") or "").strip()
+    )
+    pg_deps_ok = True
+    if db_url_set:
+        try:
+            import psycopg  # noqa: F401
+            import pgvector  # noqa: F401
+        except ImportError:
+            pg_deps_ok = False
+
+    gcv_installed = True
+    try:
+        import google.cloud.vision  # noqa: F401
+    except ImportError:
+        gcv_installed = False
+    g_vision_cfg = google_vision_configured()
+    g_vision_file = google_vision_credentials_file_ok()
+    ocr_cloud_only = os.environ.get("GRADE_OCR_CLOUD_ONLY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    ocr_google_only = os.environ.get("GRADE_OCR_GOOGLE_ONLY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
     return {
         "phase_1_preprocess": {"module": "autograder.preprocessing", "ok": True},
         "phase_1_sheet_pdf": {"module": "pymupdf", "installed": pymupdf_ok},
-        "phase_2_ocr": {"module": "autograder.ocr", "ok": True},
+        "phase_2_ocr": {
+            "module": "autograder.ocr",
+            "ok": True,
+            "google_cloud_vision_sdk_installed": gcv_installed,
+            "google_vision_configured": g_vision_cfg,
+            "google_application_credentials_file_ok": g_vision_file,
+            "document_text_detection": True,
+            "GRADE_OCR_CLOUD_ONLY": ocr_cloud_only,
+            "GRADE_OCR_GOOGLE_ONLY": ocr_google_only,
+            "ready_google_vision": gcv_installed and g_vision_cfg,
+        },
         "llm_gemini": {
             "GRADE_ENABLE_LLM": llm_flag,
             "api_key_present": gem_key,
             "ready": llm_flag and gem_key,
         },
-        "phase_3_db": {"module": "autograder.db", "backend": "sqlite", "ok": True},
+        "phase_3_db": {
+            "module": "autograder.db",
+            "backend": "postgres",
+            "database_url_set": db_url_set,
+            "postgres_deps_installed": pg_deps_ok,
+            "ok": bool(db_url_set and pg_deps_ok),
+        },
         "phase_3_embeddings": {"module": "autograder.embeddings", "ok": True},
         "phase_3_scoring": {"module": "autograder.scoring", "ok": True},
         "phase_3_key_pdf": {"module": "pypdf", "installed": pypdf_ok},
@@ -165,8 +270,9 @@ def upload_key(payload: UploadKeyRequest):
     if not payload.questions:
         raise HTTPException(status_code=400, detail="questions cannot be empty")
 
+    sort_base = next_answer_key_sort_order_start(payload.exam_id)
     key_ids: List[str] = []
-    for q in payload.questions:
+    for i, q in enumerate(payload.questions):
         embedding = embed_text_local(q.expected_answer)
         key_id = insert_answer_key(
             exam_id=payload.exam_id,
@@ -176,6 +282,7 @@ def upload_key(payload: UploadKeyRequest):
             max_marks=q.max_marks,
             domain=q.domain,
             rubric_override=q.rubric_override,
+            sort_order=sort_base + i,
         )
         key_ids.append(key_id)
     return UploadKeyResponse(key_ids=key_ids)
@@ -277,6 +384,7 @@ def evaluate(req: EvaluateRequest):
         pp = preprocess_pipeline(
             sheet["path"],
             expected_num_regions=req.expected_num_regions,
+            **_preprocess_options_from_env(),
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

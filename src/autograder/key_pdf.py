@@ -45,8 +45,11 @@ def _parse_max_marks(body: str, default: float) -> Tuple[str, float]:
 
 
 # Line-start: "1. ..." / "2) ..." / "Q3: ..." / "Question 4."
+# Use horizontal whitespace only between the number and [.:)] so broken PDF text like
+# "a\n2\n." (subscript indices) is not treated as a new section.
+_HSP = r"[ \t\u00a0\u202f]*"
 _SECTION_START = re.compile(
-    r"(?m)^\s*(?:Q(?:uestion)?\s*(\d+)|(\d+))\s*[.:)]\s*",
+    rf"(?m)^[ \t]*(?:Q(?:uestion)?{_HSP}(\d+)|(\d+)){_HSP}[.:)]\s*",
     re.IGNORECASE,
 )
 

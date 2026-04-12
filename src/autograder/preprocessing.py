@@ -23,10 +23,18 @@ logger = logging.getLogger(__name__)
 PATCH_SIZE = 384
 
 
-def load_bgr_from_path(path: Union[str, Path]) -> np.ndarray:
+def load_bgr_from_path(
+    path: Union[str, Path],
+    *,
+    pdf_page_index: int = 0,
+    pdf_render_scale: float = 3.0,
+) -> np.ndarray:
     """
     Load a BGR image for preprocessing. Supports raster images via OpenCV and
-    **text or scanned PDF** (first page only) via PyMuPDF — ``cv2.imread`` does not read PDFs.
+    **text or scanned PDF** via PyMuPDF — ``cv2.imread`` does not read PDFs.
+
+    For PDFs, ``pdf_page_index`` is zero-based (``0`` = first page).
+    ``pdf_render_scale`` multiplies the PDF page render resolution (higher = sharper OCR).
     """
     path = Path(path)
     if path.suffix.lower() == ".pdf":
@@ -40,8 +48,15 @@ def load_bgr_from_path(path: Union[str, Path]) -> np.ndarray:
         try:
             if doc.page_count < 1:
                 raise ValueError(f"PDF has no pages: {path}")
-            page = doc.load_page(0)
-            mat = fitz.Matrix(2.0, 2.0)
+            if pdf_page_index < 0 or pdf_page_index >= doc.page_count:
+                raise ValueError(
+                    f"PDF page index {pdf_page_index} out of range (0..{doc.page_count - 1}): {path}"
+                )
+            page = doc.load_page(pdf_page_index)
+            s = float(pdf_render_scale)
+            if s <= 0:
+                s = 3.0
+            mat = fitz.Matrix(s, s)
             pix = page.get_pixmap(matrix=mat, alpha=False)
         finally:
             doc.close()
@@ -168,6 +183,29 @@ def _deskew(image: np.ndarray) -> np.ndarray:
     return rotated
 
 
+def _expand_bbox(
+    x: int,
+    y: int,
+    cw: int,
+    ch: int,
+    iw: int,
+    ih: int,
+    *,
+    pad_frac: float,
+    pad_px_min: int,
+) -> Tuple[int, int, int, int]:
+    """Grow bbox so strokes near edges (end of lines) are not clipped."""
+    if pad_frac <= 0 and pad_px_min <= 0:
+        return (x, y, cw, ch)
+    pad_x = max(pad_px_min, int(cw * pad_frac))
+    pad_y = max(pad_px_min, int(ch * pad_frac))
+    x0 = max(0, x - pad_x)
+    y0 = max(0, y - pad_y)
+    x1 = min(iw, x + cw + pad_x)
+    y1 = min(ih, y + ch + pad_y)
+    return (x0, y0, x1 - x0, y1 - y0)
+
+
 def segment(
     image: np.ndarray,
     *,
@@ -176,6 +214,8 @@ def segment(
     max_area_frac: float = MAX_CONTOUR_AREA_FRAC,
     min_aspect: float = MIN_ASPECT_RATIO,
     max_aspect: float = MAX_ASPECT_RATIO,
+    bbox_padding_frac: float = 0.04,
+    bbox_padding_px_min: int = 16,
 ) -> Tuple[List[np.ndarray], List[Tuple[int, int, int, int]], bool]:
     """
     Stage 2: Extract answer regions via contours; fallback to fixed grid if count wrong.
@@ -226,6 +266,23 @@ def segment(
         return (y + ch // 2, x + cw // 2)
 
     rects.sort(key=sort_key)
+
+    # Include a margin around each contour box — handwriting often touches bbox edges.
+    padded: List[Tuple[int, int, int, int]] = []
+    for (x, y, cw, ch) in rects:
+        padded.append(
+            _expand_bbox(
+                x,
+                y,
+                cw,
+                ch,
+                w,
+                h,
+                pad_frac=bbox_padding_frac,
+                pad_px_min=bbox_padding_px_min,
+            )
+        )
+    rects = padded
 
     used_fallback = False
     if expected_num_regions is not None and len(rects) != expected_num_regions:
@@ -299,21 +356,40 @@ def preprocess_pipeline(
     expected_num_regions: int | None = None,
     patch_size: int = PATCH_SIZE,
     do_deskew: bool = True,
+    pdf_page_index: int = 0,
+    pdf_render_scale: float = 3.0,
+    full_page: bool = False,
+    bbox_padding_frac: float = 0.04,
+    bbox_padding_px_min: int = 16,
 ) -> PreprocessResult:
     """
     Run full preprocessing: ingest → segment → preprocess_patch for each region.
 
     Args:
-        image_input: Path to scanned answer sheet (JPEG/PNG/**PDF first page**) or image array.
+        image_input: Path to scanned answer sheet (JPEG/PNG/**PDF**; page set by ``pdf_page_index``) or image array.
         expected_num_regions: If set, contour count is validated; on mismatch, grid fallback is used.
         patch_size: Output patch side length (default 384).
         do_deskew: Whether to deskew in ingest stage.
+        pdf_page_index: For ``.pdf`` paths only: zero-based page index (ignored for arrays / raster paths).
+        pdf_render_scale: For ``.pdf`` paths only: PyMuPDF zoom factor (ignored for rasters).
+        full_page: If True, skip contour segmentation and OCR the whole deskewed page once
+            (best when regions would cut through sentences or redactions confuse layout).
+        bbox_padding_frac / bbox_padding_px_min: Expand each contour bbox before crop (ignored if full_page).
 
     Returns:
         PreprocessResult with list of size×size patches, bboxes, and fallback flag.
     """
     if isinstance(image_input, (str, Path)):
-        orig = load_bgr_from_path(image_input)
+        p = Path(image_input)
+        orig = (
+            load_bgr_from_path(
+                image_input,
+                pdf_page_index=pdf_page_index,
+                pdf_render_scale=pdf_render_scale,
+            )
+            if p.suffix.lower() == ".pdf"
+            else load_bgr_from_path(image_input)
+        )
         thresh = ingest(orig, do_deskew=do_deskew)
     else:
         thresh = ingest(image_input, do_deskew=do_deskew)
@@ -325,9 +401,18 @@ def preprocess_pipeline(
     orig_gray = cv2.cvtColor(orig, cv2.COLOR_BGR2GRAY)
     if do_deskew:
         orig_gray = _deskew(orig_gray)
-    patches_raw, bboxes, used_fallback = segment(
-        orig_gray, expected_num_regions=expected_num_regions
-    )
+    if full_page:
+        gh, gw = orig_gray.shape[:2]
+        patches_raw = [orig_gray]
+        bboxes = [(0, 0, gw, gh)]
+        used_fallback = False
+    else:
+        patches_raw, bboxes, used_fallback = segment(
+            orig_gray,
+            expected_num_regions=expected_num_regions,
+            bbox_padding_frac=bbox_padding_frac,
+            bbox_padding_px_min=bbox_padding_px_min,
+        )
     patches_384 = [preprocess_patch(p, size=patch_size) for p in patches_raw]
     region_ids = [f"R{i+1}" for i in range(len(patches_384))]
     return PreprocessResult(
@@ -339,5 +424,14 @@ def preprocess_pipeline(
             "num_regions": len(patches_384),
             "expected_num_regions": expected_num_regions,
             "patch_size": patch_size,
+            "pdf_page_index": pdf_page_index
+            if isinstance(image_input, (str, Path))
+            and Path(image_input).suffix.lower() == ".pdf"
+            else None,
+            "pdf_render_scale": pdf_render_scale
+            if isinstance(image_input, (str, Path))
+            and Path(image_input).suffix.lower() == ".pdf"
+            else None,
+            "full_page": full_page,
         },
     )

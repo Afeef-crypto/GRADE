@@ -10,16 +10,6 @@ import pytest
 pytest.importorskip("fastapi")
 
 
-@pytest.fixture
-def client():
-    from starlette.testclient import TestClient
-
-    from autograder.api import app
-
-    with TestClient(app) as c:
-        yield c
-
-
 def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200

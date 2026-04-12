@@ -181,7 +181,8 @@ def test_db_roundtrip() -> bool:
     init_db()
     exam = "__component_test_exam__"
     conn = get_conn()
-    conn.execute("DELETE FROM answer_keys WHERE exam_id = ?", (exam,))
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM public.answer_keys WHERE exam_id = %s", (exam,))
     conn.commit()
     conn.close()
     vec = embed_text_local("model answer text")
@@ -189,10 +190,11 @@ def test_db_roundtrip() -> bool:
     keys = list_answer_keys(exam)
     assert len(keys) == 1 and keys[0]["question_id"] == "Q1"
     conn = get_conn()
-    conn.execute("DELETE FROM answer_keys WHERE exam_id = ?", (exam,))
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM public.answer_keys WHERE exam_id = %s", (exam,))
     conn.commit()
     conn.close()
-    print("[ok] SQLite insert + list_answer_keys + cleanup")
+    print("[ok] PostgreSQL insert + list_answer_keys + cleanup")
     return True
 
 
@@ -215,7 +217,7 @@ def main() -> int:
         action="store_true",
         help="One score_answer_llm call with LLM on (uses GRADE_GEMINI_API_KEY / GEMINI_API_KEY).",
     )
-    parser.add_argument("--skip-db", action="store_true", help="Skip SQLite roundtrip")
+    parser.add_argument("--skip-db", action="store_true", help="Skip PostgreSQL roundtrip (needs GRADE_DATABASE_URL)")
     args = parser.parse_args()
 
     ok = True

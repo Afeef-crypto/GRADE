@@ -1,4 +1,6 @@
-﻿micillaneousSSS/
+﻿# Local / typo folder names (legacy)
+miscillaneousSSS/
+micillaneousSSS/
 
 # Secrets and local env (never commit real keys)
 .env
@@ -10,9 +12,9 @@ frontend/.env.*
 !frontend/.env.example
 frontend/.env.local
 
-# Optional: local service account JSONs (uncomment if you store them in-repo)
-# *-service-account*.json
-# google-credentials.json
+# Cloud / API key material (paths often used on disk; keep out of git)
+*-service-account*.json
+google-credentials.json
 
 # Python
 __pycache__/
@@ -23,17 +25,43 @@ __pycache__/
 .venv/
 venv/
 ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 
-# Local runtime / uploads (SQLite, scanned sheets)
+# Coverage / tooling
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# Local runtime / uploads (scanned sheets, etc.)
 data/
 
-# Editable install metadata
-*.egg-info/
+# Generated RAG / OCR outputs (regenerate with scripts/ocr_pdf.py)
+/extraction.json
+extraction-*.json
 
 # Sample keys / scans (keep out of git unless you intend to share)
 /Key.pdf
 /docs/Key.pdf
 DocScanner*.pdf
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Cursor (local workspace state; optional — remove if you want to share rules)
+.cursor/
 
 # Frontend (Vite)
 frontend/node_modules/

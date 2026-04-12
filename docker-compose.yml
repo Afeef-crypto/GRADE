@@ -1,0 +1,33 @@
+# Local PostgreSQL + pgvector for development and pytest.
+#
+# Prerequisites: Docker Desktop (Windows) — start it and wait until it says "Running".
+# Usage (repo root):
+#   docker compose up -d
+#   docker compose ps
+#
+# Connection string (tests default to this unless GRADE_TEST_DATABASE_URL is set):
+#   postgresql://grade:grade@127.0.0.1:5433/grade_test
+#
+# Stop: docker compose down
+# Remove data volume too: docker compose down -v
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: grade
+      POSTGRES_PASSWORD: grade
+      POSTGRES_DB: grade_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - grade_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grade -d grade_test"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+volumes:
+  grade_pgdata:

@@ -39,6 +39,24 @@ def test_empty_text_raises():
         text_to_upload_request("", "e", 4.0)
 
 
+def test_section_marker_does_not_span_lines():
+    """Avoid treating subscript-like line breaks (a\\n2\\n.) as a numbered section 2."""
+    raw = (
+        "1. First answer block.\n"
+        "formula (a1,\n"
+        "a\n"
+        "2\n"
+        ".,an)\n\n"
+        "2. Second answer block.\n"
+    )
+    r = text_to_upload_request(raw, "e", 4.0)
+    assert len(r.questions) == 2
+    assert r.questions[0].question_id == "Q1"
+    assert "First answer" in r.questions[0].expected_answer
+    assert r.questions[1].question_id == "Q2"
+    assert "Second answer" in r.questions[1].expected_answer
+
+
 def test_pdf_via_reportlab_extracts_sections():
     pytest.importorskip("reportlab")
     pytest.importorskip("pypdf")

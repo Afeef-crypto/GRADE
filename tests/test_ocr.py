@@ -271,6 +271,8 @@ class TestOcrCloud:
             "GOOGLE_CLOUD_VISION_API_KEY",
             "AZURE_VISION_ENDPOINT",
             "AZURE_VISION_KEY",
+            "GRADE_GOOGLE_VISION_USE_ADC",
+            "GRADE_OCR_GOOGLE_ONLY",
         ]
         clean_env = {k: "" for k in env_keys}
         with patch.dict(os.environ, clean_env, clear=False):
@@ -279,6 +281,23 @@ class TestOcrCloud:
                 os.environ.pop(k, None)
             with pytest.raises(RuntimeError, match="not configured"):
                 _ocr_cloud(img)
+
+    def test_google_only_skips_azure_when_google_fails(self):
+        from autograder.ocr import _ocr_cloud
+
+        img = _make_image()
+        env = {
+            "GOOGLE_APPLICATION_CREDENTIALS": "/fake/path.json",
+            "AZURE_VISION_ENDPOINT": "https://fake.endpoint/",
+            "AZURE_VISION_KEY": "fake-key",
+            "GRADE_OCR_GOOGLE_ONLY": "true",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            with patch("autograder.ocr._ocr_google", side_effect=RuntimeError("quota")):
+                with patch("autograder.ocr._ocr_azure") as mock_a:
+                    with pytest.raises(RuntimeError, match="GRADE_OCR_GOOGLE_ONLY"):
+                        _ocr_cloud(img)
+        mock_a.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

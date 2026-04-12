@@ -23,8 +23,14 @@ api = [
     "python-dotenv>=1.0.0",
     "pypdf>=4.0.0",
     "pymupdf>=1.24.0",
+    "psycopg[binary]>=3.2.0",
+    "pgvector>=0.3.0",
 ]
 dev = ["pytest>=7.0.0", "pytest-cov>=4.0.0"]
+postgres = [
+    "psycopg[binary]>=3.2.0",
+    "pgvector>=0.3.0",
+]
 ocr_google = ["google-cloud-vision>=3.4.0"]
 ocr_azure = ["azure-ai-vision-imageanalysis>=1.0.0b1", "azure-core>=1.29.5"]
 ocr_paddle = ["paddleocr>=2.7.0", "paddlepaddle>=2.5.0"]
@@ -36,7 +42,8 @@ all = [
     "google-cloud-vision>=3.4.0",
     "azure-ai-vision-imageanalysis>=1.0.0b1", "azure-core>=1.29.5",
     "paddleocr>=2.7.0", "paddlepaddle>=2.5.0",
-    "torch>=2.0.0", "transformers>=4.34.0", "Pillow>=9.5.0"
+    "torch>=2.0.0", "transformers>=4.34.0", "Pillow>=9.5.0",
+    "psycopg[binary]>=3.2.0", "pgvector>=0.3.0",
 ]
 
 [tool.setuptools.packages.find]

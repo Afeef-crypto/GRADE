@@ -7,6 +7,9 @@ Runs import checks and optional HTTP checks against a running API.
 Usage:
   PYTHONPATH=src python scripts/verify_phases.py
   PYTHONPATH=src python scripts/verify_phases.py --url http://127.0.0.1:8000
+
+Postgres / Supabase: PYTHONPATH=src python scripts/verify_postgres_db.py (needs GRADE_DATABASE_URL)
+Answer key PDFs: PYTHONPATH=src python scripts/verify_key_pdfs.py
 """
 
 from __future__ import annotations
